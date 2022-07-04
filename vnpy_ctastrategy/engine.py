@@ -374,6 +374,32 @@ class CtaEngine(BaseEngine):
             net
         )
 
+    def send_market_order(
+        self,
+        strategy: CtaTemplate,
+        contract: ContractData,
+        direction: Direction,
+        offset: Offset,
+        price: float,
+        volume: float,
+        lock: bool,
+        net: bool
+    ) -> list:
+        """
+        Send a market order to server.
+        """
+        return self.send_server_order(
+            strategy,
+            contract,
+            direction,
+            offset,
+            price,
+            volume,
+            OrderType.MARKET,
+            lock,
+            net
+        )
+
     def send_server_stop_order(
         self,
         strategy: CtaTemplate,
@@ -485,7 +511,8 @@ class CtaEngine(BaseEngine):
         volume: float,
         stop: bool,
         lock: bool,
-        net: bool
+        net: bool,
+        market: bool
     ) -> list:
         """
         """
@@ -508,9 +535,14 @@ class CtaEngine(BaseEngine):
                     strategy, direction, offset, price, volume, lock, net
                 )
         else:
-            return self.send_limit_order(
-                strategy, contract, direction, offset, price, volume, lock, net
-            )
+            if market:
+                return self.send_market_order(
+                    strategy, contract, direction, offset, price, volume, lock, net
+                )
+            else:
+                return self.send_limit_order(
+                    strategy, contract, direction, offset, price, volume, lock, net
+                )
 
     def cancel_order(self, strategy: CtaTemplate, vt_orderid: str) -> None:
         """
