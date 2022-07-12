@@ -247,14 +247,15 @@ class CtaTemplate(ABC):
         volume: float,
         stop: bool = False,
         lock: bool = False,
-        net: bool = False
+        net: bool = False,
+        market: bool = False
     ) -> list:
         """
         Send a new order.
         """
         if self.trading:
             vt_orderids: list = self.cta_engine.send_order(
-                self, direction, offset, price, volume, stop, lock, net
+                self, direction, offset, price, volume, stop, lock, net, market
             )
             return vt_orderids
         else:
