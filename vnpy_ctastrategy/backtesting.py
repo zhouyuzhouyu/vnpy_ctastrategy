@@ -73,6 +73,10 @@ class BacktestingEngine:
         self.limit_orders: Dict[str, OrderData] = {}
         self.active_limit_orders: Dict[str, OrderData] = {}
 
+        self.market_order_count: int = 0
+        self.market_orders: Dict[str, OrderData] = {}
+        self.active_market_orders: Dict[str, OrderData] = {}
+
         self.trade_count: int = 0
         self.trades: Dict[str, TradeData] = {}
 
@@ -98,6 +102,10 @@ class BacktestingEngine:
         self.limit_orders.clear()
         self.active_limit_orders.clear()
 
+        self.market_order_count = 0
+        self.market_orders.clear()
+        self.active_market_orders.clear()
+
         self.trade_count = 0
         self.trades.clear()
 
@@ -105,19 +113,19 @@ class BacktestingEngine:
         self.daily_results.clear()
 
     def set_parameters(
-        self,
-        vt_symbol: str,
-        interval: Interval,
-        start: datetime,
-        rate: float,
-        slippage: float,
-        size: float,
-        pricetick: float,
-        capital: int = 0,
-        end: datetime = None,
-        mode: BacktestingMode = BacktestingMode.BAR,
-        risk_free: float = 0,
-        annual_days: int = 240
+            self,
+            vt_symbol: str,
+            interval: Interval,
+            start: datetime,
+            rate: float,
+            slippage: float,
+            size: float,
+            pricetick: float,
+            capital: int = 0,
+            end: datetime = None,
+            mode: BacktestingMode = BacktestingMode.BAR,
+            risk_free: float = 0,
+            annual_days: int = 240
     ) -> None:
         """"""
         self.mode = mode
@@ -156,7 +164,7 @@ class BacktestingEngine:
             self.output("起始日期必须小于结束日期")
             return
 
-        self.history_data.clear()       # Clear previously loaded history data
+        self.history_data.clear()  # Clear previously loaded history data
 
         # Load 30 days of data each time and allow for progress update
         total_days: int = (self.end - self.start).days
@@ -213,20 +221,20 @@ class BacktestingEngine:
         day_count: int = 0
         ix: int = 0
 
-        for ix, data in enumerate(self.history_data):
-            if self.datetime and data.datetime.day != self.datetime.day:
-                day_count += 1
-                if day_count >= self.days:
-                    break
-
-            self.datetime = data.datetime
-
-            try:
-                self.callback(data)
-            except Exception:
-                self.output("触发异常，回测终止")
-                self.output(traceback.format_exc())
-                return
+        # for ix, data in enumerate(self.history_data):
+        #     if self.datetime and data.datetime.day != self.datetime.day:
+        #         day_count += 1
+        #         if day_count >= self.days:
+        #             break
+        #
+        #     self.datetime = data.datetime
+        #
+        #     try:
+        #         self.callback(data)
+        #     except Exception:
+        #         self.output("触发异常，回测终止")
+        #         self.output(traceback.format_exc())
+        #         return
 
         self.strategy.inited = True
         self.output("策略初始化完成")
@@ -592,11 +600,74 @@ class BacktestingEngine:
         self.tick = tick
         self.datetime = tick.datetime
 
+        self.cross_market_order()
         self.cross_limit_order()
         self.cross_stop_order()
         self.strategy.on_tick(tick)
 
         self.update_daily_close(tick.last_price)
+
+    def cross_market_order(self) -> None:
+        """
+        Cross market order with last bar/tick data.
+        """
+        if self.mode == BacktestingMode.BAR:
+            long_cross_price = self.bar.low_price
+            short_cross_price = self.bar.high_price
+            long_best_price = self.bar.open_price
+            short_best_price = self.bar.open_price
+        else:
+            long_cross_price = self.tick.ask_price_1
+            short_cross_price = self.tick.bid_price_1
+            long_best_price = long_cross_price
+            short_best_price = short_cross_price
+
+        for order in list(self.active_market_orders.values()):
+            # Push order update with status "not traded" (pending).
+            if order.status == Status.SUBMITTING:
+                order.status = Status.NOTTRADED
+                self.strategy.on_order(order)
+
+            # Push order udpate with status "all traded" (filled).
+            order.traded = order.volume
+            order.status = Status.ALLTRADED
+            self.strategy.on_order(order)
+
+            # Check whether limit orders can be filled.
+            long_cross: bool = (order.direction == Direction.LONG)
+
+            short_cross: bool = (order.direction == Direction.SHORT)
+
+            if order.vt_orderid in self.active_market_orders:
+                self.active_market_orders.pop(order.vt_orderid)
+
+            # Push trade update
+            self.trade_count += 1
+
+            if long_cross:
+                trade_price = long_best_price
+                pos_change = order.volume
+            else:
+                trade_price = short_best_price
+                pos_change = -order.volume
+
+            trade: TradeData = TradeData(
+                symbol=order.symbol,
+                exchange=order.exchange,
+                orderid=order.orderid,
+                tradeid=str(self.trade_count),
+                direction=order.direction,
+                offset=order.offset,
+                price=trade_price,
+                volume=order.volume,
+                datetime=self.datetime,
+                gateway_name=self.gateway_name,
+            )
+
+            self.strategy.pos += pos_change
+            self.strategy.on_trade(trade)
+
+            self.trades[trade.vt_tradeid] = trade
 
     def cross_limit_order(self) -> None:
         """
@@ -621,15 +692,15 @@ class BacktestingEngine:
 
             # Check whether limit orders can be filled.
             long_cross: bool = (
-                order.direction == Direction.LONG
-                and order.price >= long_cross_price
-                and long_cross_price > 0
+                    order.direction == Direction.LONG
+                    and order.price >= long_cross_price
+                    and long_cross_price > 0
             )
 
             short_cross: bool = (
-                order.direction == Direction.SHORT
-                and order.price <= short_cross_price
-                and short_cross_price > 0
+                    order.direction == Direction.SHORT
+                    and order.price <= short_cross_price
+                    and short_cross_price > 0
             )
 
             if not long_cross and not short_cross:
@@ -689,13 +760,13 @@ class BacktestingEngine:
         for stop_order in list(self.active_stop_orders.values()):
             # Check whether stop order can be triggered.
             long_cross: bool = (
-                stop_order.direction == Direction.LONG
-                and stop_order.price <= long_cross_price
+                    stop_order.direction == Direction.LONG
+                    and stop_order.price <= long_cross_price
             )
 
             short_cross: bool = (
-                stop_order.direction == Direction.SHORT
-                and stop_order.price >= short_cross_price
+                    stop_order.direction == Direction.SHORT
+                    and stop_order.price >= short_cross_price
             )
 
             if not long_cross and not short_cross:
@@ -760,12 +831,12 @@ class BacktestingEngine:
             self.strategy.on_trade(trade)
 
     def load_bar(
-        self,
-        vt_symbol: str,
-        days: int,
-        interval: Interval,
-        callback: Callable,
-        use_database: bool
+            self,
+            vt_symbol: str,
+            days: int,
+            interval: Interval,
+            callback: Callable,
+            use_database: bool
     ) -> List[BarData]:
         """"""
         self.days = days
@@ -779,30 +850,34 @@ class BacktestingEngine:
         return []
 
     def send_order(
-        self,
-        strategy: CtaTemplate,
-        direction: Direction,
-        offset: Offset,
-        price: float,
-        volume: float,
-        stop: bool,
-        lock: bool,
-        net: bool
+            self,
+            strategy: CtaTemplate,
+            direction: Direction,
+            offset: Offset,
+            price: float,
+            volume: float,
+            stop: bool,
+            lock: bool,
+            net: bool,
+            market: bool
     ) -> list:
         """"""
         price: float = round_to(price, self.pricetick)
         if stop:
             vt_orderid: str = self.send_stop_order(direction, offset, price, volume)
         else:
-            vt_orderid: str = self.send_limit_order(direction, offset, price, volume)
+            if market:
+                vt_orderid: str = self.send_market_order(direction, offset, price, volume)
+            else:
+                vt_orderid: str = self.send_limit_order(direction, offset, price, volume)
         return [vt_orderid]
 
     def send_stop_order(
-        self,
-        direction: Direction,
-        offset: Offset,
-        price: float,
-        volume: float
+            self,
+            direction: Direction,
+            offset: Offset,
+            price: float,
+            volume: float
     ) -> str:
         """"""
         self.stop_order_count += 1
@@ -823,12 +898,40 @@ class BacktestingEngine:
 
         return stop_order.stop_orderid
 
+    def send_market_order(
+            self,
+            direction: Direction,
+            offset: Offset,
+            price: float,
+            volume: float
+    ) -> str:
+        """"""
+        self.market_order_count += 1
+
+        order: OrderData = OrderData(
+            symbol=self.symbol,
+            exchange=self.exchange,
+            orderid=str(self.market_order_count),
+            direction=direction,
+            offset=offset,
+            price=price,
+            volume=volume,
+            status=Status.SUBMITTING,
+            gateway_name=self.gateway_name,
+            datetime=self.datetime
+        )
+
+        self.active_market_orders[order.vt_orderid] = order
+        self.market_orders[order.vt_orderid] = order
+
+        return order.vt_orderid
+
     def send_limit_order(
-        self,
-        direction: Direction,
-        offset: Offset,
-        price: float,
-        volume: float
+            self,
+            direction: Direction,
+            offset: Offset,
+            price: float,
+            volume: float
     ) -> str:
         """"""
         self.limit_order_count += 1
@@ -981,12 +1084,12 @@ class DailyResult:
         self.trades.append(trade)
 
     def calculate_pnl(
-        self,
-        pre_close: float,
-        start_pos: float,
-        size: int,
-        rate: float,
-        slippage: float
+            self,
+            pre_close: float,
+            start_pos: float,
+            size: int,
+            rate: float,
+            slippage: float
     ) -> None:
         """"""
         # If no pre_close provided on the first day,
@@ -1001,7 +1104,7 @@ class DailyResult:
         self.end_pos = start_pos
 
         self.holding_pnl = self.start_pos * \
-            (self.close_price - self.pre_close) * size
+                           (self.close_price - self.pre_close) * size
 
         # Trading pnl is the pnl from new trade during the day
         self.trade_count = len(self.trades)
@@ -1016,7 +1119,7 @@ class DailyResult:
 
             turnover: float = trade.volume * size * trade.price
             self.trading_pnl += pos_change * \
-                (self.close_price - trade.price) * size
+                                (self.close_price - trade.price) * size
             self.slippage += trade.volume * size * slippage
 
             self.turnover += turnover
@@ -1029,11 +1132,11 @@ class DailyResult:
 
 @lru_cache(maxsize=999)
 def load_bar_data(
-    symbol: str,
-    exchange: Exchange,
-    interval: Interval,
-    start: datetime,
-    end: datetime
+        symbol: str,
+        exchange: Exchange,
+        interval: Interval,
+        start: datetime,
+        end: datetime
 ) -> List[BarData]:
     """"""
     database: BaseDatabase = get_database()
@@ -1045,10 +1148,10 @@ def load_bar_data(
 
 @lru_cache(maxsize=999)
 def load_tick_data(
-    symbol: str,
-    exchange: Exchange,
-    start: datetime,
-    end: datetime
+        symbol: str,
+        exchange: Exchange,
+        start: datetime,
+        end: datetime
 ) -> List[TickData]:
     """"""
     database: BaseDatabase = get_database()
@@ -1059,19 +1162,19 @@ def load_tick_data(
 
 
 def evaluate(
-    target_name: str,
-    strategy_class: CtaTemplate,
-    vt_symbol: str,
-    interval: Interval,
-    start: datetime,
-    rate: float,
-    slippage: float,
-    size: float,
-    pricetick: float,
-    capital: int,
-    end: datetime,
-    mode: BacktestingMode,
-    setting: dict
+        target_name: str,
+        strategy_class: CtaTemplate,
+        vt_symbol: str,
+        interval: Interval,
+        start: datetime,
+        rate: float,
+        slippage: float,
+        size: float,
+        pricetick: float,
+        capital: int,
+        end: datetime,
+        mode: BacktestingMode,
+        setting: dict
 ) -> tuple:
     """
     Function for running in multiprocessing.pool
