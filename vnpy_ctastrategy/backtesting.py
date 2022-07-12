@@ -77,6 +77,8 @@ class BacktestingEngine:
         self.market_orders: Dict[str, OrderData] = {}
         self.active_market_orders: Dict[str, OrderData] = {}
 
+        self.order_count: int = 0
+
         self.trade_count: int = 0
         self.trades: Dict[str, TradeData] = {}
 
@@ -105,6 +107,8 @@ class BacktestingEngine:
         self.market_order_count = 0
         self.market_orders.clear()
         self.active_market_orders.clear()
+
+        self.order_count = 0
 
         self.trade_count = 0
         self.trades.clear()
@@ -773,12 +777,13 @@ class BacktestingEngine:
                 continue
 
             # Create order data.
-            self.limit_order_count += 1
+            self.market_order_count += 1
+            self.order_count += 1
 
             order: OrderData = OrderData(
                 symbol=self.symbol,
                 exchange=self.exchange,
-                orderid=str(self.limit_order_count),
+                orderid=str(self.order_count),
                 direction=stop_order.direction,
                 offset=stop_order.offset,
                 price=stop_order.price,
@@ -789,7 +794,7 @@ class BacktestingEngine:
                 datetime=self.datetime
             )
 
-            self.limit_orders[order.vt_orderid] = order
+            self.market_orders[order.vt_orderid] = order
 
             # Create trade data.
             if long_cross:
@@ -881,6 +886,7 @@ class BacktestingEngine:
     ) -> str:
         """"""
         self.stop_order_count += 1
+        self.order_count += 1
 
         stop_order: StopOrder = StopOrder(
             vt_symbol=self.vt_symbol,
@@ -889,7 +895,7 @@ class BacktestingEngine:
             price=price,
             volume=volume,
             datetime=self.datetime,
-            stop_orderid=f"{STOPORDER_PREFIX}.{self.stop_order_count}",
+            stop_orderid=f"{STOPORDER_PREFIX}.{self.order_count}",
             strategy_name=self.strategy.strategy_name,
         )
 
@@ -907,11 +913,12 @@ class BacktestingEngine:
     ) -> str:
         """"""
         self.market_order_count += 1
+        self.order_count += 1
 
         order: OrderData = OrderData(
             symbol=self.symbol,
             exchange=self.exchange,
-            orderid=str(self.market_order_count),
+            orderid=str(self.order_count),
             direction=direction,
             offset=offset,
             price=price,
@@ -935,11 +942,12 @@ class BacktestingEngine:
     ) -> str:
         """"""
         self.limit_order_count += 1
+        self.order_count += 1
 
         order: OrderData = OrderData(
             symbol=self.symbol,
             exchange=self.exchange,
-            orderid=str(self.limit_order_count),
+            orderid=str(self.self.order_count),
             direction=direction,
             offset=offset,
             price=price,
