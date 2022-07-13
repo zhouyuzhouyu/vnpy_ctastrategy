@@ -718,6 +718,18 @@ class BacktestingEngine:
             if order.vt_orderid in self.active_limit_orders:
                 self.active_limit_orders.pop(order.vt_orderid)
 
+            # check for oca type
+            try:
+                if order.ocaGroup:
+                    for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
+                        if order_temp.ocaGroup == order.ocaGroup:
+                            self.cancel_order(self.strategy, vt_orderid_temp)
+                    for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
+                        if order_temp.ocaGroup == order.ocaGroup:
+                            self.cancel_order(self.strategy, vt_orderid_temp)
+            except Exception:
+                self.output("oca异常")
+
             # Push trade update
             self.trade_count += 1
 
@@ -761,47 +773,52 @@ class BacktestingEngine:
             long_best_price = long_cross_price
             short_best_price = short_cross_price
 
-        for stop_order in list(self.active_stop_orders.values()):
+        for order in list(self.active_stop_orders.values()):
+            # Push order update with status "not traded" (pending).
+            if order.status == Status.SUBMITTING:
+                order.status = Status.NOTTRADED
+                self.strategy.on_order(order)
+
             # Check whether stop order can be triggered.
             long_cross: bool = (
-                    stop_order.direction == Direction.LONG
-                    and stop_order.price <= long_cross_price
+                    order.direction == Direction.LONG
+                    and order.price <= long_cross_price
             )
 
             short_cross: bool = (
-                    stop_order.direction == Direction.SHORT
-                    and stop_order.price >= short_cross_price
+                    order.direction == Direction.SHORT
+                    and order.price >= short_cross_price
             )
 
             if not long_cross and not short_cross:
                 continue
 
-            # Create order data.
-            self.market_order_count += 1
-            self.order_count += 1
+            # Push order udpate with status "all traded" (filled).
+            order.traded = order.volume
+            order.status = Status.ALLTRADED
+            self.strategy.on_order(order)
 
-            order: OrderData = OrderData(
-                symbol=self.symbol,
-                exchange=self.exchange,
-                orderid=str(self.order_count),
-                direction=stop_order.direction,
-                offset=stop_order.offset,
-                price=stop_order.price,
-                volume=stop_order.volume,
-                traded=stop_order.volume,
-                status=Status.ALLTRADED,
-                gateway_name=self.gateway_name,
-                datetime=self.datetime
-            )
+            if order.vt_orderid in self.active_stop_orders:
+                self.active_stop_orders.pop(order.vt_orderid)
 
-            self.market_orders[order.vt_orderid] = order
+            # check for oca type
+            try:
+                if order.ocaGroup:
+                    for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
+                        if order_temp.ocaGroup == order.ocaGroup:
+                            self.cancel_order(self.strategy, vt_orderid_temp)
+                    for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
+                        if order_temp.ocaGroup == order.ocaGroup:
+                            self.cancel_order(self.strategy, vt_orderid_temp)
+            except Exception:
+                self.output("oca异常")
 
             # Create trade data.
             if long_cross:
-                trade_price = max(stop_order.price, long_best_price)
+                trade_price = max(order.price, long_best_price)
                 pos_change = order.volume
             else:
-                trade_price = min(stop_order.price, short_best_price)
+                trade_price = min(order.price, short_best_price)
                 pos_change = -order.volume
 
             self.trade_count += 1
@@ -819,21 +836,10 @@ class BacktestingEngine:
                 gateway_name=self.gateway_name,
             )
 
-            self.trades[trade.vt_tradeid] = trade
-
-            # Update stop order.
-            stop_order.vt_orderids.append(order.vt_orderid)
-            stop_order.status = StopOrderStatus.TRIGGERED
-
-            if stop_order.stop_orderid in self.active_stop_orders:
-                self.active_stop_orders.pop(stop_order.stop_orderid)
-
-            # Push update to strategy.
-            self.strategy.on_stop_order(stop_order)
-            self.strategy.on_order(order)
-
             self.strategy.pos += pos_change
             self.strategy.on_trade(trade)
+
+            self.trades[trade.vt_tradeid] = trade
 
     def load_bar(
             self,
@@ -864,17 +870,18 @@ class BacktestingEngine:
             stop: bool,
             lock: bool,
             net: bool,
-            market: bool
+            market: bool = False,
+            ocaGroup: str = ""
     ) -> list:
         """"""
         price: float = round_to(price, self.pricetick)
         if stop:
-            vt_orderid: str = self.send_stop_order(direction, offset, price, volume)
+            vt_orderid: str = self.send_stop_order(direction, offset, price, volume, ocaGroup)
         else:
             if market:
                 vt_orderid: str = self.send_market_order(direction, offset, price, volume)
             else:
-                vt_orderid: str = self.send_limit_order(direction, offset, price, volume)
+                vt_orderid: str = self.send_limit_order(direction, offset, price, volume, ocaGroup)
         return [vt_orderid]
 
     def send_stop_order(
@@ -882,27 +889,31 @@ class BacktestingEngine:
             direction: Direction,
             offset: Offset,
             price: float,
-            volume: float
+            volume: float,
+            ocaGroup: str = ""
     ) -> str:
         """"""
         self.stop_order_count += 1
         self.order_count += 1
 
-        stop_order: StopOrder = StopOrder(
-            vt_symbol=self.vt_symbol,
+        order: OrderData = OrderData(
+            symbol=self.symbol,
+            exchange=self.exchange,
+            orderid=str(self.order_count),
             direction=direction,
             offset=offset,
             price=price,
             volume=volume,
+            status=Status.SUBMITTING,
+            gateway_name=self.gateway_name,
             datetime=self.datetime,
-            stop_orderid=f"{STOPORDER_PREFIX}.{self.order_count}",
-            strategy_name=self.strategy.strategy_name,
+            ocaGroup=ocaGroup
         )
 
-        self.active_stop_orders[stop_order.stop_orderid] = stop_order
-        self.stop_orders[stop_order.stop_orderid] = stop_order
+        self.active_stop_orders[order.vt_orderid] = order
+        self.stop_orders[order.vt_orderid] = order
 
-        return stop_order.stop_orderid
+        return order.vt_orderid
 
     def send_market_order(
             self,
@@ -938,7 +949,8 @@ class BacktestingEngine:
             direction: Direction,
             offset: Offset,
             price: float,
-            volume: float
+            volume: float,
+            ocaGroup: str = ""
     ) -> str:
         """"""
         self.limit_order_count += 1
@@ -954,7 +966,8 @@ class BacktestingEngine:
             volume=volume,
             status=Status.SUBMITTING,
             gateway_name=self.gateway_name,
-            datetime=self.datetime
+            datetime=self.datetime,
+            ocaGroup=ocaGroup
         )
 
         self.active_limit_orders[order.vt_orderid] = order
@@ -966,19 +979,17 @@ class BacktestingEngine:
         """
         Cancel order by vt_orderid.
         """
-        if vt_orderid.startswith(STOPORDER_PREFIX):
-            self.cancel_stop_order(strategy, vt_orderid)
-        else:
-            self.cancel_limit_order(strategy, vt_orderid)
+        self.cancel_stop_order(strategy, vt_orderid)
+        self.cancel_limit_order(strategy, vt_orderid)
 
     def cancel_stop_order(self, strategy: CtaTemplate, vt_orderid: str) -> None:
         """"""
         if vt_orderid not in self.active_stop_orders:
             return
-        stop_order: StopOrder = self.active_stop_orders.pop(vt_orderid)
+        order: OrderData = self.active_stop_orders.pop(vt_orderid)
 
-        stop_order.status = StopOrderStatus.CANCELLED
-        self.strategy.on_stop_order(stop_order)
+        order.status = order.CANCELLED
+        self.strategy.on_order(order)
 
     def cancel_limit_order(self, strategy: CtaTemplate, vt_orderid: str) -> None:
         """"""

@@ -154,7 +154,8 @@ class CtaTemplate(ABC):
         stop: bool = False,
         lock: bool = False,
         net: bool = False,
-        market: bool = False
+        market: bool = False,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send buy order to open a long position.
@@ -167,7 +168,8 @@ class CtaTemplate(ABC):
             stop,
             lock,
             net,
-            market
+            market,
+            ocaGroup
         )
 
     def sell(
@@ -177,7 +179,8 @@ class CtaTemplate(ABC):
         stop: bool = False,
         lock: bool = False,
         net: bool = False,
-        market: bool = False
+        market: bool = False,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send sell order to close a long position.
@@ -190,7 +193,8 @@ class CtaTemplate(ABC):
             stop,
             lock,
             net,
-            market
+            market,
+            ocaGroup
         )
 
     def short(
@@ -200,7 +204,8 @@ class CtaTemplate(ABC):
         stop: bool = False,
         lock: bool = False,
         net: bool = False,
-        market: bool = False
+        market: bool = False,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send short order to open as short position.
@@ -213,7 +218,8 @@ class CtaTemplate(ABC):
             stop,
             lock,
             net,
-            market
+            market,
+            ocaGroup
         )
 
     def cover(
@@ -223,7 +229,8 @@ class CtaTemplate(ABC):
         stop: bool = False,
         lock: bool = False,
         net: bool = False,
-        market: bool = False
+        market: bool = False,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send cover order to close a short position.
@@ -236,7 +243,8 @@ class CtaTemplate(ABC):
             stop,
             lock,
             net,
-            market
+            market,
+            ocaGroup
         )
 
     def send_order(
@@ -248,14 +256,15 @@ class CtaTemplate(ABC):
         stop: bool = False,
         lock: bool = False,
         net: bool = False,
-        market: bool = False
+        market: bool = False,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send a new order.
         """
         if self.trading:
             vt_orderids: list = self.cta_engine.send_order(
-                self, direction, offset, price, volume, stop, lock, net, market
+                self, direction, offset, price, volume, stop, lock, net, market, ocaGroup
             )
             return vt_orderids
         else:

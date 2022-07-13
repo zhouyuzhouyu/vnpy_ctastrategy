@@ -308,7 +308,8 @@ class CtaEngine(BaseEngine):
         volume: float,
         type: OrderType,
         lock: bool,
-        net: bool
+        net: bool,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send a new order to server.
@@ -322,6 +323,7 @@ class CtaEngine(BaseEngine):
             type=type,
             price=price,
             volume=volume,
+            ocaGroup=ocaGroup,
             reference=f"{APP_NAME}_{strategy.strategy_name}"
         )
 
@@ -357,7 +359,8 @@ class CtaEngine(BaseEngine):
         price: float,
         volume: float,
         lock: bool,
-        net: bool
+        net: bool,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send a limit order to server.
@@ -371,7 +374,8 @@ class CtaEngine(BaseEngine):
             volume,
             OrderType.LIMIT,
             lock,
-            net
+            net,
+            ocaGroup
         )
 
     def send_market_order(
@@ -409,7 +413,8 @@ class CtaEngine(BaseEngine):
         price: float,
         volume: float,
         lock: bool,
-        net: bool
+        net: bool,
+        ocaGroup: str = ""
     ) -> list:
         """
         Send a stop order to server.
@@ -426,7 +431,8 @@ class CtaEngine(BaseEngine):
             volume,
             OrderType.STOP,
             lock,
-            net
+            net,
+            ocaGroup
         )
 
     def send_local_stop_order(
@@ -512,7 +518,8 @@ class CtaEngine(BaseEngine):
         stop: bool,
         lock: bool,
         net: bool,
-        market: bool
+        market: bool = False,
+        ocaGroup: str = "",
     ) -> list:
         """
         """
@@ -528,7 +535,7 @@ class CtaEngine(BaseEngine):
         if stop:
             if contract.stop_supported:
                 return self.send_server_stop_order(
-                    strategy, contract, direction, offset, price, volume, lock, net
+                    strategy, contract, direction, offset, price, volume, lock, net, ocaGroup
                 )
             else:
                 return self.send_local_stop_order(
@@ -541,7 +548,7 @@ class CtaEngine(BaseEngine):
                 )
             else:
                 return self.send_limit_order(
-                    strategy, contract, direction, offset, price, volume, lock, net
+                    strategy, contract, direction, offset, price, volume, lock, net, ocaGroup
                 )
 
     def cancel_order(self, strategy: CtaTemplate, vt_orderid: str) -> None:
