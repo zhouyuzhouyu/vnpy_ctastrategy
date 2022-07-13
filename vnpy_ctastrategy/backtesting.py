@@ -719,16 +719,13 @@ class BacktestingEngine:
                 self.active_limit_orders.pop(order.vt_orderid)
 
             # check for oca type
-            try:
-                if order.ocaGroup:
-                    for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
-                        if order_temp.ocaGroup == order.ocaGroup:
-                            self.cancel_order(self.strategy, vt_orderid_temp)
-                    for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
-                        if order_temp.ocaGroup == order.ocaGroup:
-                            self.cancel_order(self.strategy, vt_orderid_temp)
-            except Exception:
-                self.output("oca异常")
+            if order.ocaGroup:
+                for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
+                    if order_temp.ocaGroup == order.ocaGroup:
+                        self.cancel_order(self.strategy, vt_orderid_temp)
+                for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
+                    if order_temp.ocaGroup == order.ocaGroup:
+                        self.cancel_order(self.strategy, vt_orderid_temp)
 
             # Push trade update
             self.trade_count += 1
@@ -802,16 +799,13 @@ class BacktestingEngine:
                 self.active_stop_orders.pop(order.vt_orderid)
 
             # check for oca type
-            try:
-                if order.ocaGroup:
-                    for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
-                        if order_temp.ocaGroup == order.ocaGroup:
-                            self.cancel_order(self.strategy, vt_orderid_temp)
-                    for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
-                        if order_temp.ocaGroup == order.ocaGroup:
-                            self.cancel_order(self.strategy, vt_orderid_temp)
-            except Exception:
-                self.output("oca异常")
+            if order.ocaGroup:
+                for vt_orderid_temp, order_temp in list(self.active_limit_orders.items()):
+                    if order_temp.ocaGroup == order.ocaGroup:
+                        self.cancel_order(self.strategy, vt_orderid_temp)
+                for vt_orderid_temp, order_temp in list(self.active_stop_orders.items()):
+                    if order_temp.ocaGroup == order.ocaGroup:
+                        self.cancel_order(self.strategy, vt_orderid_temp)
 
             # Create trade data.
             if long_cross:
@@ -988,7 +982,7 @@ class BacktestingEngine:
             return
         order: OrderData = self.active_stop_orders.pop(vt_orderid)
 
-        order.status = order.CANCELLED
+        order.status = Status.CANCELLED
         self.strategy.on_order(order)
 
     def cancel_limit_order(self, strategy: CtaTemplate, vt_orderid: str) -> None:
