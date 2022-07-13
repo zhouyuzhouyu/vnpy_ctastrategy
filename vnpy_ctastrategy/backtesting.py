@@ -31,11 +31,6 @@ from .base import (
 )
 from .template import CtaTemplate
 
-import logging
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
 
 class BacktestingEngine:
     """"""
@@ -1048,7 +1043,6 @@ class BacktestingEngine:
         Output message of backtesting engine.
         """
         print(f"{datetime.now()}\t{msg}")
-        logger.info(f"{datetime.now()}\t{msg}")
 
     def get_all_trades(self) -> list:
         """
