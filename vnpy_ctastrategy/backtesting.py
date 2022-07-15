@@ -87,6 +87,10 @@ class BacktestingEngine:
         self.daily_results: Dict[date, DailyResult] = {}
         self.daily_df: DataFrame = None
 
+        self.minute_results: Dict[date, MinuteResult] = {}
+        self.minute_df: DataFrame = None
+
+
     def clear_data(self) -> None:
         """
         Clear all data of last backtesting.
@@ -115,6 +119,7 @@ class BacktestingEngine:
 
         self.logs.clear()
         self.daily_results.clear()
+        self.minute_results.clear()
 
     def set_parameters(
             self,
@@ -314,6 +319,48 @@ class BacktestingEngine:
 
         self.output("逐日盯市盈亏计算完成")
         return self.daily_df
+
+    def calculate_minute_result(self) -> DataFrame:
+        """"""
+        self.output("开始计算分钟盯市盈亏")
+
+        if not self.trades:
+            self.output("成交记录为空，无法计算")
+            return
+
+        # Add trade data into daily reuslt.
+        for trade in self.trades.values():
+            d: date = trade.datetime.replace(second=0, microsecond=0)
+            minute_result: MinuteResult = self.minute_results[d]
+            minute_result.add_trade(trade)
+
+        # Calculate daily result by iteration.
+        pre_close = 0
+        start_pos = 0
+
+        for minute_result in self.minute_results.values():
+            minute_result.calculate_pnl(
+                pre_close,
+                start_pos,
+                self.size,
+                self.rate,
+                self.slippage
+            )
+
+            pre_close = minute_result.close_price
+            start_pos = minute_result.end_pos
+
+        # Generate dataframe
+        results: defaultdict = defaultdict(list)
+
+        for minute_result in self.minute_results.values():
+            for key, value in minute_result.__dict__.items():
+                results[key].append(value)
+
+        self.minute_df = DataFrame.from_dict(results).set_index("date")
+
+        self.output("分钟盯市盈亏计算完成")
+        return self.minute_df
 
     def calculate_statistics(self, df: DataFrame = None, output=True) -> dict:
         """"""
@@ -588,16 +635,29 @@ class BacktestingEngine:
         else:
             self.daily_results[d] = DailyResult(d, price)
 
+    def update_minute_close(self, price: float) -> None:
+        """"""
+        d: date = self.datetime.replace(second=0, microsecond=0)
+
+        minute_result: Optional[MinuteResult] = self.minute_results.get(d, None)
+        if minute_result:
+            minute_result.close_price = price
+        else:
+            self.minute_results[d] = MinuteResult(d, price)
+
     def new_bar(self, bar: BarData) -> None:
         """"""
         self.bar = bar
         self.datetime = bar.datetime
 
+        self.cross_market_order()
         self.cross_limit_order()
         self.cross_stop_order()
         self.strategy.on_bar(bar)
 
         self.update_daily_close(bar.close_price)
+        self.update_minute_close(bar.last_price)
+
 
     def new_tick(self, tick: TickData) -> None:
         """"""
@@ -610,6 +670,7 @@ class BacktestingEngine:
         self.strategy.on_tick(tick)
 
         self.update_daily_close(tick.last_price)
+        self.update_minute_close(tick.last_price)
 
     def cross_market_order(self) -> None:
         """
@@ -1059,13 +1120,95 @@ class BacktestingEngine:
         """
         Return all limit order data of current backtesting result.
         """
-        return list(self.limit_orders.values())
+        orders: [OrderData] = self.limit_orders.values() + self.market_orders.values() + self.stop_orders.values()
+        sorted(orders, key=lambda order: order.orderid)
+        return list()
 
     def get_all_daily_results(self) -> list:
         """
         Return all daily result data.
         """
         return list(self.daily_results.values())
+
+    def get_all_minute_results(self) -> list:
+        """
+        Return all minute result data.
+        """
+        return list(self.minute_results.values())
+
+class MinuteResult:
+    """"""
+
+    def __init__(self, date: date, close_price: float) -> None:
+        """"""
+        self.date: date = date
+        self.close_price: float = close_price
+        self.pre_close: float = 0
+
+        self.trades: List[TradeData] = []
+        self.trade_count: int = 0
+
+        self.start_pos = 0
+        self.end_pos = 0
+
+        self.turnover: float = 0
+        self.commission: float = 0
+        self.slippage: float = 0
+
+        self.trading_pnl: float = 0
+        self.holding_pnl: float = 0
+        self.total_pnl: float = 0
+        self.net_pnl: float = 0
+
+    def add_trade(self, trade: TradeData) -> None:
+        """"""
+        self.trades.append(trade)
+
+    def calculate_pnl(
+            self,
+            pre_close: float,
+            start_pos: float,
+            size: int,
+            rate: float,
+            slippage: float
+    ) -> None:
+        """"""
+        # If no pre_close provided on the first day,
+        # use value 1 to avoid zero division error
+        if pre_close:
+            self.pre_close = pre_close
+        else:
+            self.pre_close = 1
+
+        # Holding pnl is the pnl from holding position at day start
+        self.start_pos = start_pos
+        self.end_pos = start_pos
+
+        self.holding_pnl = self.start_pos * \
+                           (self.close_price - self.pre_close) * size
+
+        # Trading pnl is the pnl from new trade during the day
+        self.trade_count = len(self.trades)
+
+        for trade in self.trades:
+            if trade.direction == Direction.LONG:
+                pos_change = trade.volume
+            else:
+                pos_change = -trade.volume
+
+            self.end_pos += pos_change
+
+            turnover: float = trade.volume * size * trade.price
+            self.trading_pnl += pos_change * \
+                                (self.close_price - trade.price) * size
+            self.slippage += trade.volume * size * slippage
+
+            self.turnover += turnover
+            self.commission += turnover * rate
+
+        # Net pnl takes account of commission and slippage cost
+        self.total_pnl = self.trading_pnl + self.holding_pnl
+        self.net_pnl = self.total_pnl - self.commission - self.slippage
 
 
 class DailyResult:
@@ -1211,7 +1354,7 @@ def evaluate(
     engine.load_data()
     engine.run_backtesting()
     engine.calculate_result()
-    statistics: dict = engine.calculate_statistics(output=True)
+    statistics: dict = engine.calculate_statistics(output=False)
 
     target_value: float = statistics[target_name]
     return (str(setting), target_value, statistics)
