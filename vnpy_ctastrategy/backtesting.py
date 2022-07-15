@@ -1,3 +1,4 @@
+import csv
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Callable, List, Dict, Optional, Type
@@ -501,6 +502,7 @@ class BacktestingEngine:
             self.output(f"收益标准差：\t{return_std:,.2f}%")
             self.output(f"Sharpe Ratio：\t{sharpe_ratio:,.2f}")
             self.output(f"收益回撤比：\t{return_drawdown_ratio:,.2f}")
+            self.save_result()
 
         statistics: dict = {
             "start_date": start_date,
@@ -1135,6 +1137,73 @@ class BacktestingEngine:
         Return all minute result data.
         """
         return list(self.minute_results.values())
+
+    def save_result(self):
+        results: [MinuteResult] = self.get_all_minute_results()
+        headers: list = [
+            "date",
+            "trade_count",
+            "start_pos",
+            "end_pos",
+            "turnover",
+            "commission",
+            "slippage",
+            "trading_pnl",
+            "holding_pnl",
+            "total_pnl",
+            "net_pnl"
+        ]
+
+        dateTime = results[1].date.strftime("%Y%m%d")
+        fileName_results = ".vntrader/tick/" + "results" + dateTime + ".csv"
+        with open(fileName_results, "w", encoding="utf-8", newline="\n") as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(headers)
+            for result in results:
+                csv_writer.writerow([result.date.strftime("%Y%m%d %H:%M:%S.%f"),
+                                     result.trade_count,
+                                     result.start_pos,
+                                     result.end_pos,
+                                     f"{result.turnover:.2f}",
+                                     f"{result.commission:.2f}",
+                                     f"{result.slippage:.2f}",
+                                     f"{result.trading_pnl:.2f}",
+                                     f"{result.holding_pnl:.2f}",
+                                     f"{result.total_pnl:.2f}",
+                                     f"{result.net_pnl:.2f}"
+                                     ])
+
+        trades: [TradeData] = self.get_all_trades()
+        headers: list = [
+            "tradeid",
+            "orderid",
+            "symbol",
+            "exchange",
+            "direction",
+            "price",
+            "volume",
+            "datetime"
+        ]
+        fileName_trades = ".vntrader/tick/" + "trades" + dateTime + ".csv"
+        with open(fileName_trades, "w", encoding="utf-8", newline="\n") as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(headers)
+            for result in trades:
+                csv_writer.writerow([result.tradeid,
+                                     result.orderid,
+                                     result.symbol,
+                                     result.exchange,
+                                     result.direction,
+                                     f"{result.price:.2f}",
+                                     result.volume * (1 if result.direction == Direction.LONG else -1),
+                                     result.datetime.strftime("%Y%m%d %H:%M:%S.%f")
+                                     ])
+
+
+
+
+
+
 
 class MinuteResult:
     """"""
