@@ -14,12 +14,13 @@ from vnpy.trader.constant import (Direction, Offset, Exchange,
                                   Interval, Status)
 from vnpy.trader.database import get_database, BaseDatabase
 from vnpy.trader.object import OrderData, TradeData, BarData, TickData
-from vnpy.trader.utility import round_to
+from vnpy.trader.utility import round_to, get_ticks_from_csv, get_csv_file_names
 from vnpy.trader.optimize import (
     OptimizationSetting,
     check_optimization_setting,
     run_bf_optimization,
-    run_ga_optimization
+    run_ga_optimization,
+    run_bf_optimization_CSV
 )
 
 from .base import (
@@ -162,6 +163,14 @@ class BacktestingEngine:
         self.strategy = strategy_class(
             self, strategy_class.__name__, self.vt_symbol, setting
         )
+
+    def load_data_from_csv(self) -> None:
+        self.history_data.clear()  # Clear previously loaded history data
+        dateTime = self.start.strftime("%m%d%Y")
+        fileName = "nq" + dateTime + "NY.csv"
+        self.output(f"开始加载历史数据{fileName}")
+        self.history_data = get_ticks_from_csv(fileName)
+        self.output(f"历史数据加载完成{fileName}，数据量：{len(self.history_data)}")
 
     def load_data(self) -> None:
         """"""
@@ -587,14 +596,34 @@ class BacktestingEngine:
 
     def run_bf_optimization(self, optimization_setting: OptimizationSetting, output=True) -> list:
         """"""
+        # if not check_optimization_setting(optimization_setting):
+        #     return
+        #
+        # evaluate_func: callable = wrap_evaluate(self, optimization_setting.target_name)
+        # results: list = run_bf_optimization(
+        #     evaluate_func,
+        #     optimization_setting,
+        #     get_target_value,
+        #     output=self.output
+        # )
+        #
+        # if output:
+        #     for result in results:
+        #         msg: str = f"参数：{result[0]}, 目标：{result[1]}"
+        #         self.output(msg)
+        #
+        # return results
+
         if not check_optimization_setting(optimization_setting):
             return
 
-        evaluate_func: callable = wrap_evaluate(self, optimization_setting.target_name)
-        results: list = run_bf_optimization(
+        evaluate_func: callable = wrap_evaluate_all_csv(self, optimization_setting.target_name)
+        datetime_csv_list = [datetime.strptime(i[2:-2], "%m%d%Y") for i in get_csv_file_names()]
+        results: list = run_bf_optimization_CSV(
             evaluate_func,
             optimization_setting,
             get_target_value,
+            datetime_csv_list,
             output=self.output
         )
 
@@ -1420,10 +1449,53 @@ def evaluate(
     )
 
     engine.add_strategy(strategy_class, setting)
-    engine.load_data()
+    engine.load_data_from_csv()
     engine.run_backtesting()
-    engine.calculate_result()
-    statistics: dict = engine.calculate_statistics(output=False)
+    # engine.calculate_result()
+    engine.calculate_minute_result()
+    statistics: dict = engine.calculate_statistics(engine.minute_df, output=True)
+
+    target_value: float = statistics[target_name]
+    return (str(setting), target_value, statistics)
+
+
+def evaluate_csv(
+        target_name: str,
+        strategy_class: CtaTemplate,
+        vt_symbol: str,
+        interval: Interval,
+        rate: float,
+        slippage: float,
+        size: float,
+        pricetick: float,
+        capital: int,
+        mode: BacktestingMode,
+        setting: dict,
+        start: datetime
+) -> tuple:
+    """
+    Function for running in multiprocessing.pool
+    """
+    engine: BacktestingEngine = BacktestingEngine()
+
+    engine.set_parameters(
+        vt_symbol=vt_symbol,
+        interval=interval,
+        start=start,
+        rate=rate,
+        slippage=slippage,
+        size=size,
+        pricetick=pricetick,
+        capital=capital,
+        mode=mode
+    )
+
+    engine.add_strategy(strategy_class, setting)
+    engine.load_data_from_csv()
+    engine.run_backtesting()
+    # engine.calculate_result()
+    engine.calculate_minute_result()
+    statistics: dict = engine.calculate_statistics(engine.minute_df, output=True)
 
     target_value: float = statistics[target_name]
     return (str(setting), target_value, statistics)
@@ -1446,6 +1518,31 @@ def wrap_evaluate(engine: BacktestingEngine, target_name: str) -> callable:
         engine.pricetick,
         engine.capital,
         engine.end,
+        engine.mode
+    )
+    return func
+
+
+def wrap_evaluate_all_csv(engine: BacktestingEngine, target_name: str) -> callable:
+    """
+    Wrap evaluate function with given setting from backtesting engine.
+    """
+
+    # results = []
+    # csv_files = get_csv_files()
+    # times = [datetime.strptime(i[2:-2], "%m%d%Y") for i in csv_files]
+
+    func: callable = partial(
+        evaluate_csv,
+        target_name,
+        engine.strategy_class,
+        engine.vt_symbol,
+        engine.interval,
+        engine.rate,
+        engine.slippage,
+        engine.size,
+        engine.pricetick,
+        engine.capital,
         engine.mode
     )
     return func
