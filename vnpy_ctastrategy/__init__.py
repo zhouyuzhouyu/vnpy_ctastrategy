@@ -32,6 +32,7 @@ from vnpy.trader.utility import BarGenerator, ArrayManager, ArrayTickManager
 from .base import APP_NAME, StopOrder
 from .engine import CtaEngine
 from .template import CtaTemplate, CtaSignal, TargetPosTemplate
+from vnpy.trader.translate import tr
 
 
 try:
@@ -46,7 +47,7 @@ class CtaStrategyApp(BaseApp):
     app_name: str = APP_NAME
     app_module: str = __module__
     app_path: Path = Path(__file__).parent
-    display_name: str = "CTA策略"
+    display_name: str = tr("Trading Strategy", "CTA策略")
     engine_class: CtaEngine = CtaEngine
     widget_name: str = "CtaManager"
     icon_name: str = str(app_path.joinpath("ui", "cta.ico"))
