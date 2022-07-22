@@ -384,11 +384,11 @@ class StopOrderMonitor(BaseMonitor):
 
     headers: dict = {
         "stop_orderid": {
-            "display": "停止委托号",
+            "display": tr("StopOrderID", "停止委托号"),
             "cell": BaseCell,
             "update": False,
         },
-        "vt_orderids": {"display": tr("StopOrderID", "限价委托号"), "cell": BaseCell, "update": True},
+        "vt_orderids": {"display": tr("LimitOrderID", "限价委托号"), "cell": BaseCell, "update": True},
         "vt_symbol": {"display": tr("Symbol", "本地代码"), "cell": BaseCell, "update": False},
         "direction": {"display": tr("L/S", "方向"), "cell": EnumCell, "update": False},
         "offset": {"display": tr("Close/Open", "开平"), "cell": EnumCell, "update": False},
