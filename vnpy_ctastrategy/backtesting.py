@@ -1152,9 +1152,10 @@ class BacktestingEngine:
         """
         Return all limit order data of current backtesting result.
         """
-        orders: [OrderData] = self.limit_orders.values() + self.market_orders.values() + self.stop_orders.values()
-        sorted(orders, key=lambda order: order.orderid)
-        return list()
+        orders: [OrderData] = list(self.limit_orders.values()) + list(self.market_orders.values())
+        if self.stop_orders:
+            orders = orders + list(self.stop_orders.values())
+        return sorted(orders, key=lambda order: int(order.orderid))
 
     def get_all_daily_results(self) -> list:
         """
